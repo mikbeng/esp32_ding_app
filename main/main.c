@@ -10,7 +10,7 @@
 #include "esp_partition.h"
 #include "driver/i2s.h"
 #include "driver/adc.h"
-//#include "audio_example_file.h"
+#include "audio_example_file.h"
 #include "esp_adc_cal.h"
 
 //i2s number
@@ -24,7 +24,9 @@
 #define I2S_WRITE_LEN      (16 * 1024)
 
 //enable display buffer for debug
-#define I2S_BUF_DEBUG     (0)
+#define I2S_BUF_DEBUG     (1)
+
+static const char * TAG = "i2s_test";
 
 void i2s_init()
 {
@@ -34,7 +36,7 @@ void i2s_init()
         .sample_rate =  I2S_SAMPLE_RATE,
         .bits_per_sample = 16,
 	    .communication_format = I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB,
-	    .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,   //Mono
+	    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,   //Mono
 	    .intr_alloc_flags = 0,
 	    .dma_buf_count = 2,
 	    .dma_buf_len = 1024
@@ -50,7 +52,7 @@ void i2s_init()
 	 //install and start i2s driver
 	 i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
      i2s_set_pin(i2s_num, &pin_config);
-     i2s_set_clk(i2s_num, 16000, I2S_SAMPLE_BITS, I2S_CHANNEL_MONO);
+     i2s_set_clk(i2s_num, 16000, I2S_SAMPLE_BITS, I2S_CHANNEL_STEREO);
 }
 
 /**
@@ -62,11 +64,18 @@ int example_i2s_dac_data_scale(uint8_t* d_buff, uint8_t* s_buff, uint32_t len)
 {
     uint32_t j = 0;
 #if (I2S_SAMPLE_BITS == 16)
+
+    for (int i = 0; i < len; i++) {
+        d_buff[j++] = s_buff[i];
+    }
+    return (len);
+    /*
     for (int i = 0; i < len; i++) {
         d_buff[j++] = 0;
         d_buff[j++] = s_buff[i];
     }
     return (len * 2);
+    */
 #else
     for (int i = 0; i < len; i++) {
         d_buff[j++] = 0;
@@ -101,22 +110,27 @@ void app_main()
     size_t bytes_written;
     uint8_t* i2s_write_buff = (uint8_t*) calloc(i2s_write_len, sizeof(char));
 
+    i2s_init();
+
     while(1){
 
         //4. Play an example audio file(file format: 8bit/16khz/single channel)
-        printf("Playing file example: \n");
+        ESP_LOGI(TAG, "Playing audio file");
         int offset = 0;
         int tot_size = sizeof(audio_table);
-        example_set_file_play_mode();
+
+        ESP_LOGI(TAG, "Size of audio table: %d", tot_size);
 
         while (offset < tot_size) {
             int play_len = ((tot_size - offset) > (4 * 1024)) ? (4 * 1024) : (tot_size - offset);
+            ESP_LOGI(TAG, "play_len: %d", play_len);
+
             int i2s_wr_len = example_i2s_dac_data_scale(i2s_write_buff, (uint8_t*)(audio_table + offset), play_len);
             i2s_write(I2S_NUM, i2s_write_buff, i2s_wr_len, &bytes_written, portMAX_DELAY);
             offset += play_len;
-            example_disp_buf((uint8_t*) i2s_write_buff, 32);
+            //example_disp_buf((uint8_t*) i2s_write_buff, 32);
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-        example_reset_play_mode();
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+
     }
 }
